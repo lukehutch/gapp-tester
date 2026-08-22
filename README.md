@@ -215,11 +215,14 @@ clasp open-script
 Project Settings → Google Cloud Platform (GCP) Project → Change project →
 paste the project number → Set project.
 
-Enable the Apps Script API inside *that* project too:
+Enable the Apps Script API inside *that* project too, at
+`https://console.cloud.google.com/apis/library/script.googleapis.com?project=<PROJECT_ID>`
+— or `clasp open-apis`, which opens the same console for the linked project.
 
-```bash
-clasp enable-api script
-```
+(Not `clasp enable-api script`. That command only knows Apps Script *advanced
+services*, and it works by editing `appsscript.json` — it would reject the name
+and, for a name it did accept, would change your manifest rather than the Cloud
+project.)
 
 ### 3. An OAuth client of your own, in that same project
 
