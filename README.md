@@ -179,6 +179,9 @@ clasp push
 clasp open-script
 ```
 
+Those two clasp commands still need a `.clasp.json` naming your script — step 2
+below, which is the one step nobody can skip.
+
 That is the whole story if you just want to see the results. The setup below
 buys one thing: the same report in your terminal and in CI, via `gapp-test
 live`. It is one-time per script project, and every step is Google's
@@ -200,37 +203,127 @@ Then turn the Apps Script API on for your account, once ever, at
 This much already gives you `clasp push`. Everything below is only for
 `scripts.run`.
 
-### 2. A standard Cloud project, attached to the script
+### 2. A script project, and a `.clasp.json` that points at it
+
+Everything else fails without this. `clasp open-script` answering **"Script ID
+not set, unable to open IDE"** means clasp found no `.clasp.json` holding a
+`scriptId` — it looks in the current directory and then walks up the parents,
+so it also means you may simply be in the wrong directory.
+
+Which route you take depends on where the script lives.
+
+**A script bound to a Google Doc, Sheet, Form or Slide you already have** —
+this is the usual case for an editor add-on. clasp cannot bind to an existing
+document (`clasp create --type docs` always makes a *new* one), so create the
+script from the document, then clone it:
+
+1. Open the document → **Extensions → Apps Script**. That creates the bound
+   script project and opens the editor.
+2. Copy the script id: **Project Settings (⚙) → IDs → Script ID**, or take it
+   out of the editor URL, which is
+   `https://script.google.com/.../projects/`**`<SCRIPT_ID>`**`/edit`.
+3. In your project directory:
+
+```bash
+clasp clone-script <SCRIPT_ID> --rootDir src
+```
+
+**A brand-new document with a script bound to it:**
+
+```bash
+clasp create-script --type docs --title "My add-on" --rootDir src
+```
+
+That creates the Doc *and* the script, and prints both URLs.
+
+**A standalone script** (a library, or something with no container):
+
+```bash
+clasp create-script --type standalone --title "My script" --rootDir src
+```
+
+Either `create-script` writes `.clasp.json` for you; `clone-script` writes it
+too. `create` and `clone` still work as aliases.
+
+#### What `.clasp.json` holds
+
+It goes in the project root — beside `package.json` and `gapp.config.json`, not
+inside `src/`:
+
+```json
+{
+  "scriptId": "1a2B3c...",
+  "rootDir": "src"
+}
+```
+
+- `scriptId` is the only required field.
+- `rootDir` (clasp also accepts `srcDir`) is the directory clasp pushes. Set it
+  to `src` so your tests, config and `node_modules` are not uploaded. It must
+  resolve to a path inside the project root; clasp rejects anything else.
+- `projectId` appears later, in step 3.
+- `parentId` is written for you when clasp creates a container document.
+
+`clasp clone-script` also *downloads* the project's current files into
+`rootDir`. If you already have local sources you do not want overwritten, write
+`.clasp.json` by hand with the two fields above instead — clasp reads it exactly
+the same way, and `clasp push --force` then sends what you have.
+
+**Keep `.clasp.json` out of git if the repository is shared.** The script id is
+specific to your own copy, so a committed one points every contributor at your
+project. Ship a `.clasp.json.example` instead. gapp-tester's `.gitignore`
+already covers it.
+
+### 3. A standard Cloud project, attached to the script
 
 > "The Cloud project must be a standard Cloud project; default projects created
 > for Apps Script projects are insufficient."
 
-Create one in the [Cloud console](https://console.cloud.google.com/projectcreate)
-and note its **project number** (not its id). Then:
+Create one in the [Cloud console](https://console.cloud.google.com/projectcreate).
+It gives you two identifiers and you need both, in different places:
+
+- the **project number**, all digits, e.g. `314053285323`;
+- the **project id**, the readable one, e.g. `my-addon-tests-191923`.
+
+Attach it to the script by **number**:
 
 ```bash
 clasp open-script
 ```
 
-Project Settings → Google Cloud Platform (GCP) Project → Change project →
-paste the project number → Set project.
+Project Settings (⚙) → Google Cloud Platform (GCP) Project → Change project →
+paste the project **number** → Set project.
+
+Then record the **id** in `.clasp.json`, which is what clasp uses for the
+console commands:
+
+```json
+{
+  "scriptId": "1a2B3c...",
+  "rootDir": "src",
+  "projectId": "my-addon-tests-191923"
+}
+```
+
+You can also leave it out and let clasp ask: `clasp open-api-console` prompts for the
+project id when `.clasp.json` has none, and writes your answer into the file.
 
 Enable the Apps Script API inside *that* project too, at
 `https://console.cloud.google.com/apis/library/script.googleapis.com?project=<PROJECT_ID>`
-— or `clasp open-apis`, which opens the same console for the linked project.
+— or `clasp open-api-console`, which opens the same console for the linked project.
 
 (Not `clasp enable-api script`. That command only knows Apps Script *advanced
 services*, and it works by editing `appsscript.json` — it would reject the name
 and, for a name it did accept, would change your manifest rather than the Cloud
 project.)
 
-### 3. An OAuth client of your own, in that same project
+### 4. An OAuth client of your own, in that same project
 
 The client and the script have to share the Cloud project, which is why
 clasp's built-in client cannot be used here.
 
 ```bash
-clasp open-credentials
+clasp open-credentials-setup
 ```
 
 Configure the consent screen if the console asks (internal is fine, and for a
@@ -241,7 +334,7 @@ and save it in the project as `client_secret.json`.
 **Keep it out of git.** gapp-tester's `.gitignore` covers `client_secret*.json`;
 if your project has its own, add it there.
 
-### 4. Log in with it
+### 5. Log in with it
 
 ```bash
 clasp login --user gapp-tests \
@@ -270,7 +363,7 @@ Credentials land in `~/.clasprc.json`, not in your project.
 If your manifest gains a scope later, run this command again — the token is
 fixed at login time.
 
-### 5. Point gapp-tester at that credential
+### 6. Point gapp-tester at that credential
 
 ```json
 {
@@ -282,7 +375,7 @@ in `gapp.config.json`. Omit it and clasp's `default` login is used, which is
 the one without the project scopes. gapp-tester passes `--user` to both the
 push and the run.
 
-### 6. Deploy once as an API Executable
+### 7. Deploy once as an API Executable
 
 `clasp open-script` → Deploy → New deployment → type ⚙ → **API Executable** →
 Deploy.
@@ -291,7 +384,7 @@ Needed even though gapp-tester runs in devMode: devMode executes the code you
 just pushed rather than the deployed version, but a deployment still has to
 exist.
 
-### 7. If it still says the API executable is not published
+### 8. If it still says the API executable is not published
 
 Add this to your `appsscript.json` and push again:
 
@@ -300,7 +393,7 @@ Add this to your `appsscript.json` and push again:
 ```
 
 clasp's docs call for it; Google's page does not mention it, and the API
-Executable deployment in step 6 normally sets it for you. Worth knowing about
+Executable deployment in step 7 normally sets it for you. Worth knowing about
 when step 6 looks done and the error persists.
 
 If you are building a Workspace add-on, take it back out before publishing —
@@ -318,9 +411,10 @@ gapp-test live --dry-run    # print the clasp commands without running them
 
 | Message | Cause |
 |---|---|
-| `Script API executable not published/deployed` | Step 6 missing, or step 7 |
-| `PERMISSION_DENIED` / `Request had insufficient authentication scopes` | Step 4 without `--use-project-scopes`, or the manifest gained a scope since you logged in |
+| `Script API executable not published/deployed` | Step 7 missing, or step 8 |
+| `PERMISSION_DENIED` / `Request had insufficient authentication scopes` | Step 5 without `--use-project-scopes`, or the manifest gained a scope since you logged in |
 | `clasp push` fails on a login that worked before | `--use-project-scopes` without `--include-clasp-scopes` |
+| `Script ID not set, unable to open IDE` | No `.clasp.json` with a `scriptId` in this directory or a parent — step 2 |
 | `User has not enabled the Apps Script API` | Step 1's usersettings toggle |
 | Runs the old code | The credential is fine; you skipped `clasp push`, or `live.push` is `false` in the config |
 
