@@ -159,12 +159,24 @@ Options: `--dir`, `--config`, `--filter <text>`, `--tap`, `--dry-run`.
 
 ## Live mode requirements
 
-All Google's, none avoidable:
+These come from Google's Execution API (`scripts.run`), not from clasp, so
+speaking to the API directly instead of shelling out would not remove one of
+them. [Google's own list](https://developers.google.com/apps-script/api/how-tos/execute):
 
-- `clasp` installed and logged in, and a `.clasp.json` in the project;
-- the script linked to a standard GCP project;
 - the Apps Script API turned on at
-  [script.google.com/home/usersettings](https://script.google.com/home/usersettings).
+  [script.google.com/home/usersettings](https://script.google.com/home/usersettings);
+- the script linked to a **standard** Cloud project — "default projects
+  created for Apps Script projects are insufficient";
+- an OAuth client of type Desktop App **in that same Cloud project**, and
+  `clasp login --creds client_secret.json --use-project-scopes`. The token
+  must cover every scope the script declares, not only the ones the function
+  you call happens to touch;
+- the project deployed once as an API Executable. `devMode` — clasp's
+  default, and what makes `gapp-test live` run the code you just pushed
+  rather than the last deployed version — does not remove that;
+- `clasp` installed and logged in, and a `.clasp.json` in the project.
+
+That setup is the real cost of live mode, and it is one-time per project.
 
 `gapp-test live --dry-run` prints the commands it would run without running
 them.
@@ -183,8 +195,22 @@ about which of their trade-offs to refuse.
 
 **[clasp](https://github.com/google/clasp)** already solves getting code to
 Google and calling a function there. Live mode shells out to it rather than
-speaking to the Apps Script API itself: one fewer credential path, and it
-inherits your existing login. (The command is `clasp run-function`.)
+speaking to the Apps Script API itself.
+
+The two calls involved are small — `projects.updateContent` for the push and
+`scripts.run` for the call, one HTTP request each — so porting them was
+considered and rejected. The reason is that the code is not the cost. The
+cost is OAuth: an authorisation-code flow on a loopback port, a refresh-token
+exchange, and a credential file on disk that has to be written with the right
+permissions and kept out of git. clasp already does all of that, is Google's
+own, and tracks the API when it moves. Reimplementing it would buy one saved
+`npm i -g` and take on the one part of this whole design where a mistake has
+consequences beyond a red test.
+
+It costs nothing at install time either: clasp is invoked as a command, not
+imported, so gapp-tester still has no npm dependencies. The command is
+`clasp run-function --json`, and `--json` is why the return value comes back
+as data rather than as text scraped out of spinner output.
 
 **[QUnit](https://qunitjs.com/)** got the shape of an assertion object
 right — a per-test handle, messages on every assertion, grouping by module.

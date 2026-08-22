@@ -17,7 +17,7 @@ const root = path.join(__dirname, '..');
 const fixture = path.join(__dirname, 'fixture');
 const core = require(path.join(root, 'gas', 'GappTester.js'));
 const { sandbox } = require(path.join(root, 'lib', 'sandbox'));
-const { parseTap } = require(path.join(root, 'lib', 'runner-live'));
+const { parseTap, tapFrom } = require(path.join(root, 'lib', 'runner-live'));
 const configLib = require(path.join(root, 'lib', 'config'));
 const { runLocal } = require(path.join(root, 'lib', 'runner-local'));
 
@@ -194,6 +194,30 @@ t('the parser ignores whatever clasp prints around the TAP', () => {
   ].join('\n'));
   assert.strictEqual(back.results.length, 1);
   assert.strictEqual(back.passed, 1);
+});
+
+t('the return value is taken from clasp --json, not scraped', () => {
+  const tap = 'TAP version 13\n1..1\nok 1 - fine\n';
+  assert.strictEqual(tapFrom(JSON.stringify({ response: tap })), tap);
+});
+
+t('output that is not JSON is passed through for scraping', () => {
+  assert.match(tapFrom('Running…\nok 1 - fine\n'), /ok 1 - fine/);
+});
+
+t('a script exception is reported with its message and stack', () => {
+  assert.throws(
+    () => tapFrom(JSON.stringify({
+      error: {
+        message: 'wrapped',
+        details: [{
+          errorMessage: 'Docs is not defined',
+          scriptStackTraceElements: [{ function: 'gappRunInGas', lineNumber: 12 }]
+        }]
+      }
+    })),
+    /Docs is not defined[\s\S]*at gappRunInGas:12/
+  );
 });
 
 /* ------------------------------------------------------------------ */
