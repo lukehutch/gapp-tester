@@ -1,0 +1,13 @@
+{
+  "name": "gapp-tester",
+  "version": "0.1.0",
+  "description": "Tests for Google Apps Script projects: locally against mocked services, and inside the real runtime.",
+  "keywords": ["google-apps-script", "apps-script", "clasp", "testing", "tap", "add-on"],
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "git+https://github.com/lukehutch/gapp-tester.git" },
+  "main": "index.js",
+  "bin": { "gapp-test": "bin/gapp-test.js" },
+  "files": ["bin", "lib", "gas", "index.js", "README.md", "LICENSE"],
+  "engines": { "node": ">=16" },
+  "scripts": { "test": "node test/self-test.js" }
+}

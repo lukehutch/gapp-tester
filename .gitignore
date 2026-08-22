@@ -1,0 +1,16 @@
+node_modules/
+package-lock.json
+npm-debug.log*
+.npm/
+*.tgz
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+*.log
+.env
+.env.*
