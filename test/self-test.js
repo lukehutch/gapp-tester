@@ -12,6 +12,7 @@
 const assert = require('assert');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const fs = require('fs');
 
 const root = path.join(__dirname, '..');
 const fixture = path.join(__dirname, 'fixture');
@@ -214,6 +215,25 @@ t('no live.user means no --user flag', () => {
 t('the return value is taken from clasp --json, not scraped', () => {
   const tap = 'TAP version 13\n1..1\nok 1 - fine\n';
   assert.strictEqual(tapFrom(JSON.stringify({ response: tap })), tap);
+});
+
+t('a clasp failure written to stderr is reported even when clasp exits 0', () => {
+  // clasp does exactly this for "Unable to run script function. Please make
+  // sure you have permission": stderr, exit code 0, empty stdout. Reading only
+  // stdout leaves the user with a blank error.
+  const fake = path.join(fixture, 'fake-clasp.sh');
+  const link = path.join(fixture, '.clasp.json');
+  fs.writeFileSync(fake, '#!/bin/sh\necho "no permission, sorry" 1>&2\nexit 0\n');
+  fs.chmodSync(fake, 0o755);
+  fs.writeFileSync(link, '{"scriptId":"fixture","rootDir":"src"}');
+  try {
+    const cfg = Object.assign(configLib.load(fixture), { live: {
+      entry: 'gappRunInGas', push: false, clasp: fake, user: null } });
+    assert.throws(() => runLive(cfg, {}), /no permission, sorry/);
+  } finally {
+    fs.unlinkSync(fake);
+    fs.unlinkSync(link);
+  }
 });
 
 t('output that is not JSON is passed through for scraping', () => {
