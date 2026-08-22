@@ -17,7 +17,7 @@ const root = path.join(__dirname, '..');
 const fixture = path.join(__dirname, 'fixture');
 const core = require(path.join(root, 'gas', 'GappTester.js'));
 const { sandbox } = require(path.join(root, 'lib', 'sandbox'));
-const { parseTap, tapFrom } = require(path.join(root, 'lib', 'runner-live'));
+const { runLive, parseTap, tapFrom } = require(path.join(root, 'lib', 'runner-live'));
 const configLib = require(path.join(root, 'lib', 'config'));
 const { runLocal } = require(path.join(root, 'lib', 'runner-local'));
 
@@ -194,6 +194,21 @@ t('the parser ignores whatever clasp prints around the TAP', () => {
   ].join('\n'));
   assert.strictEqual(back.results.length, 1);
   assert.strictEqual(back.passed, 1);
+});
+
+t('live.user is passed to both clasp steps', () => {
+  const cfg = Object.assign(configLib.load(fixture), { live: {
+    entry: 'gappRunInGas', push: true, clasp: 'clasp', user: 'gapp-tests' } });
+  const out = runLive(cfg, { dryRun: true });
+  assert.deepStrictEqual(out.commands, [
+    'clasp --user gapp-tests push --force',
+    'clasp --user gapp-tests run-function gappRunInGas --json'
+  ]);
+});
+
+t('no live.user means no --user flag', () => {
+  const out = runLive(configLib.load(fixture), { dryRun: true });
+  assert.ok(!out.commands.join(' ').includes('--user'));
 });
 
 t('the return value is taken from clasp --json, not scraped', () => {

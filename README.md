@@ -145,7 +145,12 @@ sandbox({ globals: { DocumentApp: myDocumentApp } })
   "src": "src",
   "serverFiles": ["Units.js", "Code.js"],
   "local": ["test"],
-  "live": { "entry": "gappRunInGas", "push": true, "clasp": "clasp" }
+  "live": {
+    "entry": "gappRunInGas",
+    "push": true,
+    "clasp": "clasp",
+    "user": null
+  }
 }
 ```
 
@@ -154,39 +159,175 @@ sandbox({ globals: { DocumentApp: myDocumentApp } })
   files is also how you keep test-only files out of the sandbox.
 - `local` takes files, or directories searched for `*.test.js`.
 - `live.entry` is the script function that runs the live suites.
+- `live.push` set to `false` runs against whatever is already in the project.
+- `live.clasp` is the command name, for a clasp that is not on `PATH`.
+- `live.user` is the clasp named credential to use — see
+  [Live mode setup](#live-mode-setup). `null` means clasp's `default` login,
+  which is almost certainly not the one that can run functions.
 
 Options: `--dir`, `--config`, `--filter <text>`, `--tap`, `--dry-run`.
 
-## Live mode requirements
+## Live mode setup
 
-These come from Google's Execution API (`scripts.run`), not from clasp, so
-speaking to the API directly instead of shelling out would not remove one of
-them. [Google's own list](https://developers.google.com/apps-script/api/how-tos/execute):
+**You may not need any of this.** Push the project and run the entry function
+from the Apps Script editor — open the script, pick `gappRunInGas` in the
+function list, press Run, read the TAP in the execution log:
 
-- the Apps Script API turned on at
-  [script.google.com/home/usersettings](https://script.google.com/home/usersettings);
-- the script linked to a **standard** Cloud project — "default projects
-  created for Apps Script projects are insufficient";
-- an OAuth client of type Desktop App **in that same Cloud project**, and
-  `clasp login --creds client_secret.json --use-project-scopes`. The token
-  must cover every scope the script declares, not only the ones the function
-  you call happens to touch;
-- the project deployed once as an API Executable. `devMode` — clasp's
-  default, and what makes `gapp-test live` run the code you just pushed
-  rather than the last deployed version — does not remove that;
-- `clasp` installed and logged in, and a `.clasp.json` in the project.
+```bash
+gapp-test install      # copies GappTester.js into src/, once
+clasp push
+clasp open-script
+```
 
-That setup is the real cost of live mode, and it is one-time per project.
+That is the whole story if you just want to see the results. The setup below
+buys one thing: the same report in your terminal and in CI, via `gapp-test
+live`. It is one-time per script project, and every step is Google's
+requirement for the Execution API (`scripts.run`), not clasp's —
+[their list](https://developers.google.com/apps-script/api/how-tos/execute).
+Writing our own HTTP client instead of shelling out to clasp would not remove
+a single one.
 
-`gapp-test live --dry-run` prints the commands it would run without running
-them.
+### 1. clasp, and the Apps Script API
+
+```bash
+npm install -g @google/clasp
+clasp login
+```
+
+Then turn the Apps Script API on for your account, once ever, at
+[script.google.com/home/usersettings](https://script.google.com/home/usersettings).
+
+This much already gives you `clasp push`. Everything below is only for
+`scripts.run`.
+
+### 2. A standard Cloud project, attached to the script
+
+> "The Cloud project must be a standard Cloud project; default projects created
+> for Apps Script projects are insufficient."
+
+Create one in the [Cloud console](https://console.cloud.google.com/projectcreate)
+and note its **project number** (not its id). Then:
+
+```bash
+clasp open-script
+```
+
+Project Settings → Google Cloud Platform (GCP) Project → Change project →
+paste the project number → Set project.
+
+Enable the Apps Script API inside *that* project too:
+
+```bash
+clasp enable-api script
+```
+
+### 3. An OAuth client of your own, in that same project
+
+The client and the script have to share the Cloud project, which is why
+clasp's built-in client cannot be used here.
+
+```bash
+clasp open-credentials
+```
+
+Configure the consent screen if the console asks (internal is fine, and for a
+personal Google account choose external and add yourself as a test user).
+Then **Create credentials → OAuth client ID → Desktop app**, download the JSON,
+and save it in the project as `client_secret.json`.
+
+**Keep it out of git.** gapp-tester's `.gitignore` covers `client_secret*.json`;
+if your project has its own, add it there.
+
+### 4. Log in with it
+
+```bash
+clasp login --user gapp-tests \
+            --creds client_secret.json \
+            --use-project-scopes \
+            --include-clasp-scopes
+```
+
+Three details in that command, each of which will cost you a debugging session
+if dropped:
+
+- **`--include-clasp-scopes` is not optional.** On its own,
+  `--use-project-scopes` *replaces* clasp's scopes with your manifest's rather
+  than adding to them (`buildScopes` in clasp's `src/commands/login.ts`). The
+  token then lacks `script.projects`, and the `clasp push` that `gapp-test
+  live` runs first fails — which reads like a push problem, not a login one.
+- **`--use-project-scopes` is also not optional.** The token has to cover every
+  scope your `appsscript.json` declares, not just the ones the function you
+  call happens to touch.
+- **`--user gapp-tests`** stores this as a *named* credential, leaving your
+  everyday `clasp login` untouched. Any name will do; `default` overwrites the
+  ordinary one, which you probably do not want.
+
+Credentials land in `~/.clasprc.json`, not in your project.
+
+If your manifest gains a scope later, run this command again — the token is
+fixed at login time.
+
+### 5. Point gapp-tester at that credential
+
+```json
+{
+  "live": { "user": "gapp-tests" }
+}
+```
+
+in `gapp.config.json`. Omit it and clasp's `default` login is used, which is
+the one without the project scopes. gapp-tester passes `--user` to both the
+push and the run.
+
+### 6. Deploy once as an API Executable
+
+`clasp open-script` → Deploy → New deployment → type ⚙ → **API Executable** →
+Deploy.
+
+Needed even though gapp-tester runs in devMode: devMode executes the code you
+just pushed rather than the deployed version, but a deployment still has to
+exist.
+
+### 7. If it still says the API executable is not published
+
+Add this to your `appsscript.json` and push again:
+
+```json
+"executionApi": { "access": "ANYONE" }
+```
+
+clasp's docs call for it; Google's page does not mention it, and the API
+Executable deployment in step 6 normally sets it for you. Worth knowing about
+when step 6 looks done and the error persists.
+
+If you are building a Workspace add-on, take it back out before publishing —
+`executionApi` is a permanent execution surface on your add-on, and a test
+suite is a poor reason to ship one.
+
+### Then
+
+```bash
+gapp-test live
+gapp-test live --dry-run    # print the clasp commands without running them
+```
+
+### Known failures, and what they mean
+
+| Message | Cause |
+|---|---|
+| `Script API executable not published/deployed` | Step 6 missing, or step 7 |
+| `PERMISSION_DENIED` / `Request had insufficient authentication scopes` | Step 4 without `--use-project-scopes`, or the manifest gained a scope since you logged in |
+| `clasp push` fails on a login that worked before | `--use-project-scopes` without `--include-clasp-scopes` |
+| `User has not enabled the Apps Script API` | Step 1's usersettings toggle |
+| Runs the old code | The credential is fine; you skipped `clasp push`, or `live.push` is `false` in the config |
 
 **Live mode has not been exercised against a real script project by its
-author** — `clasp` was not installed on the machine where it was written.
-The local runner, the sandbox, the assertions, the TAP round trip and the
-CLI all have tests. Live mode's command construction and TAP parsing have
-tests; the round trip through Google does not. Treat the first
-`gapp-test live` on your project as the thing that proves it.
+author** — `clasp` was not installed on the machine where it was written. The
+local runner, the sandbox, the assertions, the TAP round trip and the CLI all
+have tests. Live mode's command construction, its JSON handling and its TAP
+parsing have tests; the round trip through Google does not. The setup above is
+read out of clasp 3.4.0's source and Google's documentation, not out of a run
+that succeeded. Treat your first `gapp-test live` as the thing that proves it.
 
 ## Why it looks like this
 

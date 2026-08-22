@@ -1,3 +1,10 @@
+# Credentials. client_secret.json is the OAuth client you download from the
+# Cloud console for live mode; .clasprc.json is where clasp keeps tokens if
+# you point -A/--auth at the project instead of ~. Neither belongs in git.
+client_secret*.json
+.clasprc.json
+.clasp.json
+
 node_modules/
 package-lock.json
 npm-debug.log*
