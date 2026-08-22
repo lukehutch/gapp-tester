@@ -2,7 +2,16 @@
 # Cloud console for live mode; .clasprc.json is where clasp keeps tokens if
 # you point -A/--auth at the project instead of ~. Neither belongs in git.
 client_secret*.json
+client_id*.json
+creds*.json
+credentials*.json
+service-account*.json
+*-key.json
+*.pem
+*.p12
 .clasprc.json
+*.clasprc.json
+clasprc*.json
 .clasp.json
 
 node_modules/
